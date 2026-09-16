@@ -174,25 +174,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         'Account selection failed after {max_retries} retries; {account} is still not displayed. Continuing login attempt'
                     ).format(max_retries=max_retries, account=account))
                     raise Exception(self.tr('Failed to switch account'))
-            self.sleep(4)
-            texts = self.ocr()
-            login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-                                        match=LOGIN_TEXTS)
-            if not login_btn:
-                # 切换账号后按钮文案可能是 进入游戏/开始游戏，不匹配 LOGIN_TEXTS，
-                # 在全屏范围内查找后再点击
-                login_btn = self.find_boxes(texts, match=ENTER_GAME_TEXTS)
-            if login_btn:
-                self.click(login_btn, after_sleep=3)
-            else:
-                self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
+            self.sleep(2)
             self.logged_in = False
-            # self.update_capture({
-            #     'windows': {
-            #         'interaction': 'PostMessage',
-            #         'capture_method': ['WGC', 'BitBlt_RenderFull'],
-            #     }
-            # })
+            # 反复定位并点击登录按钮，直到进入大世界或耗尽轮次；
+            # 切号后的登录页 OCR 经常漏识别按钮，只用一次性点击成功率太低
+            if not self._click_login_until_entered():
+                self.log_info('login retry rounds exhausted without reaching world, hand over to ensure_main')
             self.ensure_main(time_out=180)
             self.log_info(self.tr('Login successful'))
             return current_account
@@ -201,6 +188,54 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 mouse_reset_task.enable()
             if auto_login_was_enabled:
                 auto_login_task.enable()
+
+    def _click_login_until_entered(self, max_rounds=5):
+        """切号后反复尝试点击登录按钮，直到检测到已进入大世界。
+
+        每轮：OCR 定位"登录"/"进入游戏"按钮优先；OCR 漏识别时，只有确认仍停留在
+        登录页（账号下拉框可见）才点击屏幕居中的固定兜底位置，避免在加载/公告等
+        过渡界面盲点。每次判定与点击都打印坐标和原因，方便从日志确认触发时机。
+        """
+        login_box = self.box_of_screen(0.3, 0.3, 0.7, 0.8, hcenter=True, vcenter=True)
+        for round_index in range(1, max_rounds + 1):
+            if self.in_team_and_world():
+                self.log_info(f'login round {round_index}: already in team and world, login confirmed')
+                self.logged_in = True
+                return True
+            self.sleep(2)
+            texts = self.ocr()
+            target = self.find_boxes(texts, boundary=login_box, match=LOGIN_TEXTS)
+            target_kind = 'login'
+            if not target:
+                enter_btn = self.find_boxes(texts, match=ENTER_GAME_TEXTS)
+                if enter_btn:
+                    target = enter_btn
+                    target_kind = 'enter_game'
+            if target:
+                head = target[0]
+                cx, cy = head.x + head.width // 2, head.y + head.height // 2
+                names = [str(getattr(box, 'name', box)) for box in target]
+                self.log_info(
+                    f'login round {round_index}: OCR found {target_kind} button {names}, click at ({cx},{cy})'
+                )
+                self.click(target, after_sleep=4)
+                continue
+            # OCR 没找到按钮：确认还停留在登录页才使用固定居中位置兜底点击
+            # （下拉列表已收起时屏幕上恰好有 1 个掩码账号文本）
+            account_now = self.find_boxes(texts, account_pattern)
+            if len(account_now) == 1:
+                self.log_info(
+                    f'login round {round_index}: OCR missed button but login page confirmed '
+                    f'by account text {account_now[0]}, fallback click center (0.5, 0.568)'
+                )
+                self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=4)
+            else:
+                self.log_info(
+                    f'login round {round_index}: no login button and no login page evidence '
+                    f'(account boxes={len(account_now)}), assume auto-login/loading, wait without click'
+                )
+                self.sleep(2)
+        return bool(self.in_team_and_world())
 
     def _wait_dropdown_closed(self, time_out=10):
         """等待账号下拉列表收起：收起后屏幕上只剩 1 个掩码账号文本。"""

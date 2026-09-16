@@ -33,7 +33,9 @@ class MergeEchoTask(BaseWWTask):
             return
         self.sleep(3)
 
-        if self.click_dialog_left_button():
+        # 背包里有"一键分解"确认弹窗时才继续；找不到说明没有可分解声骸，
+        # 用非抛异常方式探测，避免把正常情况误报成"找不到对话框左侧按钮"
+        if self.click_dialog_left_button(raise_if_not_found=False):
             self.sleep(2)
             self.click_relative(0.034, 0.293, after_sleep=1)
             self.click_relative(0.580, 0.911, after_sleep=4)

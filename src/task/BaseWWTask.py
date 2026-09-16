@@ -688,13 +688,19 @@ class BaseWWTask(BaseTask):
         self.click_dialog_right_button()
         self.wait_in_team_and_world(time_out=120)
 
-    def click_dialog_right_button(self):
+    def click_dialog_right_button(self, raise_if_not_found=True):
         confirm = self.find_one([
             Labels.confirm_btn_hcenter_vcenter,
             Labels.confirm_btn_highlight_hcenter_vcenter,
         ])
         if not confirm:
-            raise CannotFindException(self.tr("can't find dialog right button"))
+            if raise_if_not_found:
+                raise CannotFindException(self.tr("can't find dialog right button"))
+            # 调用方只是尝试性点击（例如背包里没有弹窗），不属于致命错误，
+            # 打印 debug 日志说明"为什么没点"，避免误报刷屏
+            self.log_debug("no dialog right(confirm) button found, skip clicking")
+            return None
+        self.log_info(f"click dialog right(confirm) button: {confirm}")
         self.click(confirm, after_sleep=2)
         return confirm
 
@@ -704,13 +710,19 @@ class BaseWWTask(BaseTask):
         self.click_dialog_left_button()
         self.wait_in_team_and_world(time_out=120)
 
-    def click_dialog_left_button(self) -> Box:
+    def click_dialog_left_button(self, raise_if_not_found=True) -> Box | None:
         cancel = self.find_one([
             Labels.cancel_button_hcenter_vcenter,
             Labels.cancel_button_highlight_hcenter_vcenter,
         ])
         if not cancel:
-            raise CannotFindException(self.tr("can't find dialog left button"))
+            if raise_if_not_found:
+                raise CannotFindException(self.tr("can't find dialog left button"))
+            # 调用方只是尝试性点击（例如背包里没有弹窗），不属于致命错误，
+            # 打印 debug 日志说明"为什么没点"，避免误报刷屏
+            self.log_debug("no dialog left(cancel) button found, skip clicking")
+            return None
+        self.log_info(f"click dialog left(cancel) button: {cancel}")
         self.click(cancel, after_sleep=2)
         return cancel
 
@@ -750,21 +762,29 @@ class BaseWWTask(BaseTask):
                 return False
             texts = self.ocr(log=self.debug)
 
-            login_box = self.box_of_screen(0.3, 0.3, 0.7, 0.7, hcenter=True, vcenter=True)
+            login_box = self.box_of_screen(0.3, 0.3, 0.7, 0.8, hcenter=True, vcenter=True)
             if login := self.find_boxes(texts,
                                         boundary=login_box,
                                         match=LOGIN_TEXTS):
-                if not self.find_boxes(texts, boundary=login_box, match="+86"):
-                    # the game may be auto logging in with saved credentials, wait and
-                    # confirm the login button is still there before clicking (#1356)
-                    self.sleep(LOGIN_CLICK_SETTLE_TIME)
-                    texts = self.ocr(log=self.debug)
-                    login = self.find_boxes(texts, boundary=login_box,
-                                            match=LOGIN_TEXTS)
-                    if login and not self.find_boxes(texts, boundary=login_box,
-                                                     match="+86"):
-                        self.click(login, after_sleep=1)
-                        self.log_info('点击登录按钮!')
+                if plus86 := self.find_boxes(texts, boundary=login_box, match="+86"):
+                    # 中国服手机账号带 +86 前缀，游戏通常正在用已保存凭证自动登录，
+                    # 此时点击登录按钮反而可能打断流程；打印日志说明"为什么没点"
+                    self.log_debug(f"login page shows +86 prefix {plus86}, assume auto-login, skip clicking")
+                    return False
+                # the game may be auto logging in with saved credentials, wait and
+                # confirm the login button is still there before clicking (#1356)
+                self.sleep(LOGIN_CLICK_SETTLE_TIME)
+                texts = self.ocr(log=self.debug)
+                login = self.find_boxes(texts, boundary=login_box,
+                                        match=LOGIN_TEXTS)
+                if not login:
+                    self.log_debug("login button disappeared after settle, assume auto-login in progress")
+                    return False
+                if self.find_boxes(texts, boundary=login_box, match="+86"):
+                    self.log_debug("+86 prefix appeared after settle, skip clicking login button")
+                    return False
+                self.log_info(f"click login button (wait_login): {login}")
+                self.click(login, after_sleep=1)
                 return False
             if agree := self.find_boxes(texts, boundary=login_box, match="同意"):
                 self.log_debug(f'found agree {agree}')

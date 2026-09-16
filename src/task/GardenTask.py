@@ -1,4 +1,5 @@
 import re
+import time
 
 
 from ok import Logger, run_task
@@ -12,11 +13,18 @@ logger = Logger.get_logger(__name__)
 
 class GardenTask(WWOneTimeTask, BaseWWTask):
     GARDEN_TARGET_POINTS = re.compile('6000')
+    # 乐园活动主界面顶部速度档位：×1.0 / ×3.0 / ×5.0 / MAX，点击按钮循环切换
+    GARDEN_SPEED_MAX = re.compile(r'M[\s.·]*A[\s.·]*X', re.IGNORECASE)
+    GARDEN_SPEED_LOW = re.compile(r'(?:[xX×]\s*)?[135](?:\.0)?')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "🎡 自动周常乐园"
         self.description = "Detect and click garden actions until the task is stopped."
+        # 速度档位检测节流：两次检测至少间隔秒数
+        self._last_speed_check = 0.0
+        self._speed_max_logged = False
+        self._speed_clicks = 0
         self.garden_features = [
             label.value for label in Labels
             if label.value.startswith("garden_")
@@ -36,6 +44,9 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
         self.click(0.246, 0.486, after_sleep=1)
         while True:
             self.sleep(0.1)
+            # 乐园活动主界面/战斗内顶部都有速度档位胶囊（×1.0/×3.0/×5.0/MAX），
+            # 检测到非 MAX 档位时点一下，循环到 MAX 为止
+            self.ensure_garden_speed_max()
             target = self.find_best_garden_feature()
             self.sleep(0.2)
             if target:
@@ -97,6 +108,50 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
     def is_garden_done(self, texts):
         text = " ".join(str(getattr(box, "name", box)) for box in texts)
         return text.count(self.GARDEN_TARGET_POINTS.pattern) != 1
+
+    def ensure_garden_speed_max(self, force=False):
+        """检测顶部居中的速度胶囊按钮（×1.0/×3.0/×5.0/MAX），不是 MAX 就点一下。
+
+        OCR 明确读到档位文字才点击，读不到（界面加载中/被弹窗遮挡）绝不盲点，
+        防止把已有的 MAX 档点回 ×1；连续点击上限后放弃并打印原因。
+        """
+        now = time.monotonic()
+        if not force and now - self._last_speed_check < 2:
+            return
+        self._last_speed_check = now
+        # 实测 1920x1040 主界面按钮位于 (1219,41)-(1343,82)，中心约 (1281,61)；
+        # 与 COCO the_garden_max 锚点 (1227,43,71,38) 基本重合，按 hcenter 锚定
+        speed_box = self.box_of_screen(0.605, 0.02, 0.725, 0.10, hcenter=True, vcenter=True)
+        try:
+            texts = self.ocr(box=speed_box)
+        except Exception as e:
+            self.log_debug(f'garden speed ocr failed: {e}')
+            return
+        names = [str(getattr(box, 'name', box)).strip() for box in texts]
+        if any(self.GARDEN_SPEED_MAX.fullmatch(name) for name in names):
+            if not self._speed_max_logged:
+                self.log_info('garden speed is MAX')
+                self._speed_max_logged = True
+            self._speed_clicks = 0
+            return
+        low = next((box for box in texts
+                    if self.GARDEN_SPEED_LOW.fullmatch(str(getattr(box, 'name', box)).strip())), None)
+        if low is None:
+            # 区域里没有明确的档位文字，说明按钮不在当前界面或被遮挡，不点击
+            return
+        if self._speed_clicks >= 6:
+            if self._speed_clicks == 6:
+                self.log_error(
+                    f'garden speed still shows {getattr(low, "name", low)} after {self._speed_clicks} clicks, '
+                    'stop cycling', notify=True
+                )
+            return
+        self._speed_max_logged = False
+        self._speed_clicks += 1
+        self.log_info(
+            f'garden speed shows {getattr(low, "name", low)}, click to cycle (click #{self._speed_clicks})'
+        )
+        self.click(low, after_sleep=0.6)
 
     def find_best_garden_feature(self):
         matches = []
