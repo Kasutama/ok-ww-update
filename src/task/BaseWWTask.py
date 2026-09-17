@@ -7,7 +7,8 @@ from typing import List
 import numpy as np
 
 from ok import BaseTask, Logger, find_boxes_by_name, og, find_color_rectangles, mask_white, Box
-from ok import CannotFindException
+from ok import CannotFindException, PostMessageInteraction
+from ok.feature.FeatureSet import adjust_coordinates
 import cv2
 
 from src.Labels import Labels
@@ -750,6 +751,70 @@ class BaseWWTask(BaseTask):
             self.back(after_sleep=2)
             return False
 
+    def _get_post_message_backend(self):
+        """登录界面专用的 PostMessage 点击后端。
+
+        当前交互本身就是 PostMessageInteraction 时返回 None（调用方直接走普通
+        click，行为完全一致）；用户选择了 Pynput/PyDirect 时，惰性构造一个独立的
+        PostMessageInteraction，只用于登录点击，不改变全局交互设置。
+        PostMessage 点击不移动物理光标、不要求窗口在前台，可送达独占全屏或失焦的
+        游戏窗口（物理模拟输入在这两种场景下会被系统丢弃）。
+        """
+        interaction = getattr(self.executor, 'interaction', None)
+        if isinstance(interaction, PostMessageInteraction):
+            return None
+        dm = getattr(self.executor, 'device_manager', None)
+        if dm is None or getattr(dm, 'hwnd_window', None) is None or \
+                getattr(dm, 'capture_method', None) is None:
+            return None
+        backend = getattr(self, '_post_message_backend', None)
+        # capture 重建（如切换交互/截图方式）后刷新缓存，避免持有失效引用
+        if backend is None or backend.capture is not dm.capture_method or \
+                backend.hwnd_window is not dm.hwnd_window:
+            backend = PostMessageInteraction(dm.capture_method, dm.hwnd_window)
+            self._post_message_backend = backend
+        return backend
+
+    def post_click(self, x, y, after_sleep=1, name=None):
+        """登录界面点击：优先 PostMessage 直投（不动物理鼠标、不依赖前台焦点），
+        不可用或异常时回退普通 click。"""
+        x, y = int(x), int(y)
+        backend = self._get_post_message_backend()
+        if backend is None:
+            return self.click(x, y, after_sleep=after_sleep, name=name)
+        try:
+            backend.click(x, y, move=True, down_time=0.05, key='left')
+            self.log_info(f'post message login click {name or ""} ({x},{y})')
+        except Exception as e:
+            self.log_error(f'post message click failed, fallback to normal click: {e}')
+            return self.click(x, y, after_sleep=after_sleep, name=name)
+        if after_sleep > 0:
+            self.sleep(after_sleep)
+        self.executor.reset_scene()
+        return True
+
+    def post_click_box(self, box, after_sleep=1, relative_x=0.5, relative_y=0.5):
+        """对 OCR/特征框执行 PostMessage 登录点击，兼容 list 入参（取第一个）。"""
+        if isinstance(box, list):
+            if not box:
+                return False
+            box = box[0]
+        if not box:
+            return False
+        x, y = box.relative_with_variance(relative_x, relative_y)
+        return self.post_click(x, y, after_sleep=after_sleep, name=getattr(box, 'name', None))
+
+    def post_click_relative(self, rel_x, rel_y, hcenter=False, vcenter=False, after_sleep=1, name=None):
+        """相对坐标版 PostMessage 登录点击，坐标映射与框架 click_relative 完全一致。"""
+        if self.out_of_ratio():
+            should_width = self.executor.device_manager.supported_ratio * self.height
+            x, y, _, _, _ = adjust_coordinates(rel_x * should_width, rel_y * self.height, 0, 0,
+                                               self.screen_width, self.screen_height, should_width,
+                                               self.height, hcenter=hcenter, vcenter=vcenter)
+        else:
+            x, y = int(self.width * rel_x), int(self.height * rel_y)
+        return self.post_click(x, y, after_sleep=after_sleep, name=name)
+
     def wait_login(self):
         if not self.logged_in:
             if self.in_team_and_world():
@@ -757,7 +822,7 @@ class BaseWWTask(BaseTask):
                 return True
             self.handle_monthly_card()
             if login_close := self.find_one('login_close', horizontal_variance=0.15, vertical_variance=0.1):
-                self.click(login_close, after_sleep=1)
+                self.post_click_box(login_close, after_sleep=1)
                 self.log_info('关闭公告!')
                 return False
             texts = self.ocr(log=self.debug)
@@ -784,12 +849,12 @@ class BaseWWTask(BaseTask):
                     self.log_debug("+86 prefix appeared after settle, skip clicking login button")
                     return False
                 self.log_info(f"click login button (wait_login): {login}")
-                self.click(login, after_sleep=1)
+                self.post_click_box(login, after_sleep=1)
                 return False
             if agree := self.find_boxes(texts, boundary=login_box, match="同意"):
                 self.log_debug(f'found agree {agree}')
                 if self.find_boxes(texts, boundary=login_box, match=re.compile("隐私")):
-                    self.click(agree, after_sleep=1)
+                    self.post_click_box(agree, after_sleep=1)
                     self.log_info('点击同意按钮!')
                 return False
             if self.find_boxes(texts, match=[re.compile("游戏即将重启"), re.compile('遊戲即將重啟')]):
@@ -803,14 +868,14 @@ class BaseWWTask(BaseTask):
 
             if start := self.find_boxes(texts, boundary='bottom_right', match=["开始游戏", re.compile("进入游戏")]):
                 if not self.find_boxes(texts, boundary='bottom_right', match=LOGIN_TEXTS):
-                    self.click(start)
+                    self.post_click_box(start)
                     self.log_info(f'点击开始游戏! {start}')
                     return False
             if switch_login := self.find_one(Labels.switch_account, vertical_variance=0.1, threshold=0.7):
                 if boxes := self.find_boxes(texts, boundary=self.box_of_screen(0.37, 0.63, 0.63, 0.99, hcenter=True,
                                                                                vcenter=True)):
                     self.log_info(f'wait_login {switch_login} {boxes}')
-                    self.click_relative(0.503, 0.926, hcenter=True, vcenter=True, after_sleep=3)
+                    self.post_click_relative(0.503, 0.926, hcenter=True, vcenter=True, after_sleep=3)
                     return False
 
     def in_team_and_world(self):

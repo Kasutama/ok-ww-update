@@ -120,7 +120,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.info_set('All Accounts', self.all_accounts)
             if next_account is None and not self._is_done(account.name):
                 next_account = account.name
-                self.click(account, after_sleep=2)
+                # PostMessage 直投：不移动物理光标，避免光标悬停干扰下拉列表选项
+                self.post_click_box(account, after_sleep=2)
         self.log_info(self.tr('Click next account: {account}').format(account=next_account))
         return next_account
 
@@ -139,17 +140,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             max_retries = 5
             for attempt in range(1, max_retries + 1):
-                # self.ensure_in_front()
-                # self.update_capture({
-                #     'windows': {
-                #         'interaction': 'Pynput',
-                #         'capture_method': 'ForegroundBitBlt',
-                #     }
-                # })
+                # 登录器窗口（CEF/原生下拉框）与独占全屏下，Pynput/PyDirect 的物理模拟
+                # 点击可能不送达或因光标悬停干扰选项；登录界面点击统一走 PostMessage 直投。
                 self.sleep(1)
                 drop_down = self.find_account_drop_down()
                 if drop_down:
-                    self.click(drop_down, after_sleep=2)
+                    self.post_click_box(drop_down, after_sleep=2)
                 if self.do_find_account_drop_down():
                     self.log_error('click drop down no effect')
                     self.screenshot('multi')
@@ -218,7 +214,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info(
                     f'login round {round_index}: OCR found {target_kind} button {names}, click at ({cx},{cy})'
                 )
-                self.click(target, after_sleep=4)
+                self.post_click_box(target, after_sleep=4)
                 continue
             # OCR 没找到按钮：确认还停留在登录页才使用固定居中位置兜底点击
             # （下拉列表已收起时屏幕上恰好有 1 个掩码账号文本）
@@ -226,9 +222,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if len(account_now) == 1:
                 self.log_info(
                     f'login round {round_index}: OCR missed button but login page confirmed '
-                    f'by account text {account_now[0]}, fallback click center (0.5, 0.568)'
+                    f'by account text {account_now[0]}, fallback post click center (0.5, 0.568)'
                 )
-                self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=4)
+                self.post_click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=4)
             else:
                 self.log_info(
                     f'login round {round_index}: no login button and no login page evidence '
