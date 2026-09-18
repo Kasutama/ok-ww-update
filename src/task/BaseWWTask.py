@@ -7,7 +7,8 @@ from typing import List
 import numpy as np
 
 from ok import BaseTask, Logger, find_boxes_by_name, og, find_color_rectangles, mask_white, Box
-from ok import CannotFindException, PostMessageInteraction
+from ok import CannotFindException, PostMessageInteraction, PyDirectInteraction
+from ok.device.interaction_methods.pynput import PynputInteraction
 from ok.feature.FeatureSet import adjust_coordinates
 import cv2
 
@@ -814,6 +815,81 @@ class BaseWWTask(BaseTask):
         else:
             x, y = int(self.width * rel_x), int(self.height * rel_y)
         return self.post_click(x, y, after_sleep=after_sleep, name=name)
+
+    def _get_physical_backend(self):
+        """登录器账号下拉选号专用的物理点击后端。
+
+        登录器的账号下拉是游戏内嵌 CEF 弹出层，只响应走系统输入栈的真实硬件
+        事件，PostMessage 合成的 WM_LBUTTONDOWN/UP 不会被 Chromium 处理
+        （3.3.36 时代多账号切号走的就是 Pynput 物理点击，真机可用）。
+        当前交互本身就是 Pynput/PyDirect 物理输入时返回 None（调用方直接走
+        普通 click）；全局为 PostMessage 时，惰性构造一个独立的
+        PynputInteraction，只用于选号点击，不切换全局交互、不重建截图管道。
+        物理输入要求游戏窗口在前台，由调用方先 ensure_in_front。
+        """
+        interaction = getattr(self.executor, 'interaction', None)
+        if isinstance(interaction, (PynputInteraction, PyDirectInteraction)):
+            return None
+        dm = getattr(self.executor, 'device_manager', None)
+        if dm is None or getattr(dm, 'hwnd_window', None) is None or \
+                getattr(dm, 'capture_method', None) is None:
+            return None
+        backend = getattr(self, '_physical_backend', None)
+        # capture 重建后刷新缓存，避免持有失效引用
+        if backend is None or backend.capture is not dm.capture_method or \
+                backend.hwnd_window is not dm.hwnd_window:
+            backend = PynputInteraction(dm.capture_method, dm.hwnd_window)
+            self._physical_backend = backend
+        return backend
+
+    def physical_click(self, x, y, after_sleep=1, name=None):
+        """登录器选号点击：真实物理输入（Pynput SendInput）。
+
+        点击前确保游戏窗口在前台（CEF 弹出层只在前台接收物理输入），
+        点击后把光标移回原位，尽量减少物理光标悬停对下拉列表的干扰。
+        物理后端不可用（如非 Windows / 设备异常）时回退普通 click。
+        """
+        x, y = int(x), int(y)
+        backend = self._get_physical_backend()
+        if backend is None:
+            return self.click(x, y, after_sleep=after_sleep, name=name)
+        # PynputInteraction.clickable() 在窗口非前台时直接静默丢弃点击
+        if not backend.hwnd_window.is_foreground():
+            self.log_info('physical click: window not in foreground, bringing to front')
+            self.ensure_in_front()
+            self.sleep(0.5)
+        try:
+            backend.click(x, y, move_back=True, down_time=0.05, key='left')
+            self.log_info(f'physical picker click {name or ""} ({x},{y})')
+        except Exception as e:
+            self.log_error(f'physical click failed, fallback to normal click: {e}')
+            return self.click(x, y, after_sleep=after_sleep, name=name)
+        if after_sleep > 0:
+            self.sleep(after_sleep)
+        self.executor.reset_scene()
+        return True
+
+    def physical_click_box(self, box, after_sleep=1, relative_x=0.5, relative_y=0.5):
+        """对 OCR/特征框执行物理选号点击，兼容 list 入参（取第一个）。"""
+        if isinstance(box, list):
+            if not box:
+                return False
+            box = box[0]
+        if not box:
+            return False
+        x, y = box.relative_with_variance(relative_x, relative_y)
+        return self.physical_click(x, y, after_sleep=after_sleep, name=getattr(box, 'name', None))
+
+    def physical_click_relative(self, rel_x, rel_y, hcenter=False, vcenter=False, after_sleep=1, name=None):
+        """相对坐标版物理选号点击，坐标映射与框架 click_relative 完全一致。"""
+        if self.out_of_ratio():
+            should_width = self.executor.device_manager.supported_ratio * self.height
+            x, y, _, _, _ = adjust_coordinates(rel_x * should_width, rel_y * self.height, 0, 0,
+                                               self.screen_width, self.screen_height, should_width,
+                                               self.height, hcenter=hcenter, vcenter=vcenter)
+        else:
+            x, y = int(self.width * rel_x), int(self.height * rel_y)
+        return self.physical_click(x, y, after_sleep=after_sleep, name=name)
 
     def wait_login(self):
         if not self.logged_in:

@@ -120,8 +120,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.info_set('All Accounts', self.all_accounts)
             if next_account is None and not self._is_done(account.name):
                 next_account = account.name
-                # PostMessage 直投：不移动物理光标，避免光标悬停干扰下拉列表选项
-                self.post_click_box(account, after_sleep=2)
+                # 账号下拉列表是游戏内嵌 CEF 弹出层，只响应真实物理输入
+                # （PostMessage 合成鼠标消息不被 Chromium 处理），走物理点击
+                self.physical_click_box(account, after_sleep=2)
         self.log_info(self.tr('Click next account: {account}').format(account=next_account))
         return next_account
 
@@ -140,15 +141,18 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             max_retries = 5
             for attempt in range(1, max_retries + 1):
-                # 登录器窗口（CEF/原生下拉框）与独占全屏下，Pynput/PyDirect 的物理模拟
-                # 点击可能不送达或因光标悬停干扰选项；登录界面点击统一走 PostMessage 直投。
+                # 登录器账号下拉是游戏内嵌 CEF 弹出层，PostMessage 合成鼠标消息
+                # 不被 Chromium 处理；选号期间用独立 Pynput 后端做真实物理点击，
+                # 不切换全局交互、不重建截图管道。物理输入要求窗口前台，每轮置顶。
+                self.ensure_in_front()
                 self.sleep(1)
                 drop_down = self.find_account_drop_down()
                 if drop_down:
-                    self.post_click_box(drop_down, after_sleep=2)
+                    self.physical_click_box(drop_down, after_sleep=2)
                 if self.do_find_account_drop_down():
                     self.log_error('click drop down no effect')
                     self.screenshot('multi')
+                    # 前台状态可能丢失（用户切窗/弹窗遮挡），下轮重新置顶后再试
                     continue
                 account = self.wait_until(
                     lambda: self._click_account_in_list(),
@@ -185,12 +189,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if auto_login_was_enabled:
                 auto_login_task.enable()
 
-    def _click_login_until_entered(self, max_rounds=5):
-        """切号后反复尝试点击登录按钮，直到检测到已进入大世界。
+    def _click_login_until_entered(self, max_rounds=3):
+        """切号后在前台物理模式下反复点击登录按钮，直到进入大世界或耗尽轮次。
 
-        每轮：OCR 定位"登录"/"进入游戏"按钮优先；OCR 漏识别时，只有确认仍停留在
-        登录页（账号下拉框可见）才点击屏幕居中的固定兜底位置，避免在加载/公告等
-        过渡界面盲点。每次判定与点击都打印坐标和原因，方便从日志确认触发时机。
+        登录器主界面与账号下拉同为游戏内嵌 CEF，只认走系统输入栈的真实点击；
+        所有点击都走 BaseWWTask 的独立 Pynput 物理后端（全局交互仍是
+        PostMessage，不影响进入大世界后的后台战斗）。每轮：OCR 定位
+        "登录"/"进入游戏"按钮优先；OCR 漏识别时，只有确认仍停留在登录页
+        （账号文本可见）才点击屏幕居中的固定兜底位置，避免在加载/公告等
+        过渡界面盲点。点击前确保窗口在前台。
         """
         login_box = self.box_of_screen(0.3, 0.3, 0.7, 0.8, hcenter=True, vcenter=True)
         for round_index in range(1, max_rounds + 1):
@@ -198,6 +205,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info(f'login round {round_index}: already in team and world, login confirmed')
                 self.logged_in = True
                 return True
+            # 物理点击必须在前台进行，每轮确保游戏窗口置顶
+            self.ensure_in_front()
             self.sleep(2)
             texts = self.ocr()
             target = self.find_boxes(texts, boundary=login_box, match=LOGIN_TEXTS)
@@ -214,17 +223,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info(
                     f'login round {round_index}: OCR found {target_kind} button {names}, click at ({cx},{cy})'
                 )
-                self.post_click_box(target, after_sleep=4)
+                self.physical_click_box(target, after_sleep=4)
                 continue
-            # OCR 没找到按钮：确认还停留在登录页才使用固定居中位置兜底点击
+            # OCR 没找到按钮：确认还停留在登录页才使用固定居中位置兜底物理点击
             # （下拉列表已收起时屏幕上恰好有 1 个掩码账号文本）
             account_now = self.find_boxes(texts, account_pattern)
             if len(account_now) == 1:
                 self.log_info(
                     f'login round {round_index}: OCR missed button but login page confirmed '
-                    f'by account text {account_now[0]}, fallback post click center (0.5, 0.568)'
+                    f'by account text {account_now[0]}, fallback physical click center (0.5, 0.568)'
                 )
-                self.post_click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=4)
+                self.physical_click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=4)
             else:
                 self.log_info(
                     f'login round {round_index}: no login button and no login page evidence '
