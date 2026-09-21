@@ -20,6 +20,13 @@ number_re = re.compile(r'(\d+)')
 stamina_re = re.compile(r'(\d+)/(\d+)')
 LOGIN_TEXTS = ["登录", re.compile('Log|点击连接|Click to Connect', re.IGNORECASE), '登入']
 LOGIN_CLICK_SETTLE_TIME = 4  # seconds; keep below AutoLoginTask trigger_interval (5) so triggers don't overlap
+# 游戏内信箱界面的专属文案（简/繁/英）。monthly_card 模板阈值较松（0.65），
+# 信箱内邮件横幅/配图会被误匹配，用这些文案排除月卡弹窗的误判
+MAIL_UI_MARKERS = [
+    re.compile(r'全部邮件|全部郵件|All Mail', re.IGNORECASE),
+    re.compile(r'全部领取|全部領取|Claim All', re.IGNORECASE),
+    re.compile(r'删除已读|刪除已讀|Delete Read', re.IGNORECASE),
+]
 f_white_color = {
     'r': (235, 255),  # Red range
     'g': (235, 255),  # Green range
@@ -1116,23 +1123,39 @@ class BaseWWTask(BaseTask):
     def find_monthly_card(self):
         return self.find_one('monthly_card', threshold=0.65, horizontal_variance=0.05, vertical_variance=0.05)
 
+    def is_mail_ui_open(self):
+        """游戏内信箱（邮件）界面是否打开。
+
+        真机日志：claim_mail 后停在信箱界面时，邮件横幅/配图误匹配
+        monthly_card 模板（阈值 0.65），handle_monthly_card 点击错误位置，
+        且 is_main 因此跳过本该发送的 ESC，信箱永远关不掉，最终
+        ensure_main 超时报 'Please start in game world and in team!'。
+        信箱界面有稳定的专属文案，命中任一即排除月卡弹窗。
+        """
+        texts = self.ocr()
+        return bool(self.find_boxes(texts, match=MAIL_UI_MARKERS))
+
     def handle_monthly_card(self):
         monthly_card = self.find_monthly_card()
-        # self.screenshot('monthly_card1')
-        if monthly_card is not None:
-            # self.screenshot('monthly_card1')
-            self.log_info('monthly_card found click')
-            self.click_relative(0.50, 0.89)
-            self.sleep(2)
-            # self.screenshot('monthly_card2')
-            self.click_relative(0.50, 0.89)
-            self.sleep(2)
-            self.wait_until(self.in_team_and_world, time_out=10,
-                            post_action=lambda: self.click_relative(0.50, 0.89, after_sleep=1))
-            # self.screenshot('monthly_card3')
+        if monthly_card is None:
+            return False
+        if self.is_mail_ui_open():
+            self.log_info('monthly_card template matched inside mailbox UI, skip as false positive')
+            return False
+        self.log_info('monthly_card found click')
+        self.click_relative(0.50, 0.89)
+        self.sleep(2)
+        self.click_relative(0.50, 0.89)
+        self.sleep(2)
+        entered = self.wait_until(self.in_team_and_world, time_out=10,
+                                  post_action=lambda: self.click_relative(0.50, 0.89, after_sleep=1))
+        # 只有点击后确实回到大世界才推进检查窗口；点击失败时保留原时间，
+        # 避免真正的月卡弹窗被漏判到第二天
+        if entered:
             self.set_check_monthly_card(next_day=True)
-        # logger.debug(f'check_monthly_card {monthly_card}')
-        return monthly_card is not None
+        else:
+            self.log_error('monthly card clicks did not lead back to world, keep monthly card check time')
+        return True
 
     @property
     def game_lang(self):
