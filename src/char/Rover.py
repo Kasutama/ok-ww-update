@@ -1,9 +1,10 @@
 import time
 from ok import Logger
-from src.char.BaseChar import BaseChar, Elements
+from src.char.BaseChar import BaseChar, CharType, Elements
 
 _ROVER_FORM_NAMES = {
     Elements.SPECTRO: 'Rover: Spectro',
+    Elements.ELECTRIC: 'Rover: Electro',
     Elements.WIND: 'Rover: Aero',
     Elements.HAVOC: 'Rover: Havoc',
 }
@@ -11,11 +12,14 @@ _ROVER_FORM_NAMES = {
 
 class Rover(BaseChar):
     def __init__(self, *args, **kwargs):
+        self._last_known_form = -1
         super().__init__(*args, **kwargs)
         self.use_skyfall_severance = False
         self._bind_form_logger()
 
     def reset_state(self):
+        if self.ring_index >= 0:
+            self._last_known_form = self.ring_index
         self.ring_index = -1
         super().reset_state()
         self._bind_form_logger()
@@ -23,6 +27,11 @@ class Rover(BaseChar):
     @property
     def display_name(self):
         return _ROVER_FORM_NAMES.get(self.ring_index, 'Rover')
+
+    def get_char_type(self):
+        form = self.ring_index if self.ring_index >= 0 else self._last_known_form
+        # 首次识别前按辅助调度，上场仍重新确认形态。
+        return CharType.SUB_DPS if form in (-1, Elements.ELECTRIC) else super().get_char_type()
 
     def __repr__(self):
         return self.display_name
@@ -47,33 +56,11 @@ class Rover(BaseChar):
             self.task._ensure_ring_index()
             self._bind_form_logger()
 
-    def _in_zani_liber_insert_window(self):
-        """赞妮大招插队窗口：phase 2/3 且仍在 liberation 时跑 insert 短轴。"""
-        from src.char.Zani import Zani
-        zani = self.task.has_char(Zani)
-        if zani is None or not getattr(zani, '_zanfei_guang', False):
-            return False
-        return bool(zani.try_consume_insert_handoff())
-
-    def _discard_zani_liber_insert_handoff(self):
-        """非 Spectro 形态不执行 Insert，丢弃本次 token 后继续自身 routine。"""
-        from src.char.Zani import Zani
-        zani = self.task.has_char(Zani)
-        if (
-            zani is not None
-            and getattr(zani, 'in_liberation', False)
-            and getattr(zani, '_liber_phase', 0) in (2, 3)
-            and getattr(zani, '_liber_handoff_token', 0) > 0
-        ):
-            zani._liber_handoff_token = 0
-            self.logger.info('rover: discard zani insert token for non-spectro routine')
-
     def do_perform(self):
         self.init()
         if not self.has_intro:
             self.sleep(0.01)
         if self.ring_index == Elements.HAVOC:
-            self._discard_zani_liber_insert_handoff()
             self.intro_motion_freeze_duration = 0.64
             self.logger.info('rover: form-dispatch ring=HAVOC routine=havoc')
             if self.perform_havoc_routine():
@@ -81,62 +68,18 @@ class Rover(BaseChar):
         elif self.ring_index == Elements.SPECTRO:
             self.intro_motion_freeze_duration = 0.92
             self.logger.info('rover: form-dispatch ring=SPECTRO routine=spectro')
-            if self.perform_spectro_routine():
-                return
+            self.perform_spectro_routine()
         elif self.ring_index == Elements.WIND:
-            self._discard_zani_liber_insert_handoff()
             self.intro_motion_freeze_duration = 0.52
             self.logger.info('rover: form-dispatch ring=WIND routine=wind')
             self.perform_wind_routine()
+        elif self.ring_index == Elements.ELECTRIC:
+            self.logger.info('rover: form-dispatch ring=ELECTRIC routine=electric')
+            self.perform_electric_routine()
         else:
-            self._discard_zani_liber_insert_handoff()
             self.logger.info('rover: form-dispatch ring=UNKNOWN routine=basic')
             self.perform_basic_routine()
         self.switch_next_char()
-
-    INSERT_R_TO_Q_SETTLE = 0.60
-
-    def _do_zani_liber_insert(self):
-        """赞妮大招插入：E → R → Q → 切回赞妮。"""
-        self.logger.info('rover: zani liber insert short axis (E+Q+R)')
-        self.init()
-        if self.has_intro:
-            self.continues_normal_attack(0.2)
-        self.wait_down()
-        if self.resonance_available():
-            self.click_resonance(send_click=True)
-            self.sleep(0.05)
-        if self.task.use_liberation:
-            liber_success = self.click_liberation(send_click=True)
-            if not liber_success:
-                self.logger.info('rover: liber insert R first-fail, retry loop')
-                retry_start = time.time()
-                while time.time() - retry_start < 2:
-                    remaining = 2 - (time.time() - retry_start)
-                    self.continues_normal_attack(min(0.25, remaining))
-                    if time.time() - retry_start >= 2:
-                        break
-                    if self.click_liberation(send_click=True, wait_if_cd_ready=0):
-                        liber_success = True
-                        self.logger.info(f'rover: liber insert R retry-success elapsed={time.time() - retry_start:.2f}s')
-                        break
-            else:
-                self.logger.info('rover: liber insert R first-success')
-            if liber_success:
-                self.logger.info(f'rover: insert R settle begin duration={self.INSERT_R_TO_Q_SETTLE:.2f}s')
-                self.sleep(self.INSERT_R_TO_Q_SETTLE)
-                self.logger.info(f'rover: insert R settle elapsed={self.INSERT_R_TO_Q_SETTLE:.2f}s')
-        if self.echo_available():
-            self.logger.info('rover: insert Q input time_out=0')
-            self.click_echo(time_out=0)
-            self.logger.info('rover: insert Q returned')
-        if self.buff_time > 0:
-            self.last_buff_time = time.time()
-            self.logger.info(f'rover: insert buff refreshed buff_time={self.buff_time}')
-        self.logger.info('rover: insert switch-to-zani')
-        from src.char.Zani import Zani
-        zani = self.task.has_char(Zani)
-        return super().switch_next_char()
 
     def init(self):
         previous_form = self.ring_index
@@ -157,16 +100,57 @@ class Rover(BaseChar):
         if self.ring_index == Elements.WIND:
             self.init_wind()
 
+    def electric_skill_ready(self):
+        # 小E提示可能误匹配，须同时确认回路满格标记。
+        return self.is_forte_full() and bool(self.is_e_forte_full())
+
+    def perform_electric_routine(self):
+        self.wait_down(click=False)
+        self.click_echo()
+        # Q后图标可能暂时变暗，让helper处理就绪重试，避免单帧判断漏放R。
+        self.click_liberation(click_f=False)
+        if not self.electric_skill_ready() and self.resonance_available():
+            if self.click_resonance(send_click=False, time_out=1)[0]:
+                self.sleep(0.1)
+        start = time.time()
+        duration = 8 if self.has_intro else 12
+        while not self.electric_skill_ready() and self.time_elapsed_accounting_for_freeze(start) < duration:
+            self.click()
+            self.sleep(0.1)
+        if not self.electric_skill_ready():
+            self.logger.info('rover: electric forte not ready before rotation timeout')
+            return
+        if not self.short_electric_skill():
+            self.logger.info('rover: electric enhanced resonance not confirmed, switch out')
+            return
+        if not self.is_con_full():
+            self.click_liberation(click_f=False)
+        if not self.is_con_full():
+            self.continues_normal_attack(2, until_con_full=True)
+
+    def short_electric_skill(self):
+        # 强化E能在普通E冷却期间触发，不能用普通冷却拦截。
+        for attempt in range(2):
+            if not self.electric_skill_ready():
+                return False
+            start = time.time()
+            self.send_resonance_key(down_time=0.05)
+            # 回路在尾段消耗；过滤瞬间变暗，同时保留必要的动作保护。
+            consumed = bool(self.task.wait_until(
+                lambda: self.time_elapsed_accounting_for_freeze(start) >= 1.5
+                        and not self.is_forte_full() and not self.is_e_forte_full(),
+                time_out=2.6, settle_time=0.2, pre_action=self.check_combat))
+            if consumed:
+                self.record_resonance_use()
+                return True
+            self.logger.info(f'rover: electric enhanced resonance attempt {attempt + 1} not confirmed')
+        return False
+
     def perform_spectro_routine(self):
-        if self._in_zani_liber_insert_window():
-            self._do_zani_liber_insert()
-            return True
         if self.has_intro:
             self.continues_normal_attack(1)
         self.wait_down()
-        self.heavy_attack()
-        self.sleep(0.4)
-        self.continues_normal_attack(0.7)
+        self.spectro_routine_aftertune_combo()
         self.click_echo(time_out=0)
         if self.is_forte_full():
             self.check_combat()
@@ -176,7 +160,11 @@ class Rover(BaseChar):
         self.check_combat()
         if not self.click_liberation(send_click=True):
             self.click_resonance()
-        return False
+
+    def spectro_routine_aftertune_combo(self):
+        self.heavy_attack()
+        self.sleep(0.4)
+        self.continues_normal_attack(0.7)
 
     def perform_havoc_routine(self):
         self.wait_down()
