@@ -1168,8 +1168,8 @@ msgid "Merge Discarded Echoes"
 msgstr "融合已弃置声骸"
 
 msgid ""
-"Must have 1000 discarded Echo to Run, Merge discarded Echoes in full "
-"batches of 100."
+"Must have 1000 discarded Echo to Run, Merge discarded Echoes in full batches"
+" of 100."
 msgstr "运行前必须有1000个已弃置声骸，每批融合100个。"
 
 msgid "Bag Key"
@@ -1196,13 +1196,18 @@ msgstr "已弃置声骸超过1000时融合"
 msgid "Additional Tasks to Run After Daily Task"
 msgstr "每日任务后运行的附加任务"
 
-msgid "Select optional tasks. Nightmare Nest runs before stamina farming to help complete the daily task; the other tasks run afterward."
+msgid ""
+"Select optional tasks. Nightmare Nest runs before stamina farming to help "
+"complete the daily task; the other tasks run afterward."
 msgstr "选择可选任务。梦魇巢穴会在消耗体力前运行，以协助完成每日任务；其他任务将在之后运行。"
 
-msgid "Teleport and Farm 4C Echo requires \"Teleport to Boss\" to be enabled in Farm Echo Task."
+msgid ""
+"Teleport and Farm 4C Echo requires \"Teleport to Boss\" to be enabled in "
+"Farm Echo Task."
 msgstr "选择“传送并刷取4C声骸”时，必须在刷取声骸任务中启用“传送至首领”。"
 
-msgid "Auto Farm all Nightmare Nest requires at least one \"Which to Farm\" option."
+msgid ""
+"Auto Farm all Nightmare Nest requires at least one \"Which to Farm\" option."
 msgstr "选择“自动刷取所有梦魇巢穴”时，“刷取目标”必须至少选择一项。"
 
 msgid "Daily Task Completed"
@@ -1447,8 +1452,44 @@ msgstr "特异梦魇"
 
 msgid "Which Special Nightmare to Teleport"
 msgstr "传送到第几个特异梦魇"
+
 msgid "Multi Account Config Task"
 msgstr "多账号配置执行"
 
-msgid "Log in to accounts in card order and run tasks with independent configurations"
+msgid ""
+"Log in to accounts in card order and run tasks with independent "
+"configurations"
 msgstr "按卡片顺序登录账号，并使用各账号的独立配置执行任务"
+
+msgid "Revive Teammate with Medicine"
+msgstr "队友死亡后自动用药复活"
+
+msgid ""
+"Switch to a dead teammate and use a revival item to bring them back during "
+"combat, also revive the current character with medicine instead of ending "
+"combat"
+msgstr "战斗中切换到死亡队友并使用复苏道具将其复活；当前角色死亡时也会使用道具复活，而不是结束战斗"
+
+msgid "Block Switch Slot 1"
+msgstr "屏蔽切换一号位"
+
+msgid ""
+"Never switch to slot 1 during combat. Blocking all three slots is not "
+"allowed, it will be ignored"
+msgstr "战斗中不切换到一号位。不允许屏蔽全部三个位置，将被忽略"
+
+msgid "Block Switch Slot 2"
+msgstr "屏蔽切换二号位"
+
+msgid ""
+"Never switch to slot 2 during combat. Blocking all three slots is not "
+"allowed, it will be ignored"
+msgstr "战斗中不切换到二号位。不允许屏蔽全部三个位置，将被忽略"
+
+msgid "Block Switch Slot 3"
+msgstr "屏蔽切换三号位"
+
+msgid ""
+"Never switch to slot 3 during combat. Blocking all three slots is not "
+"allowed, it will be ignored"
+msgstr "战斗中不切换到三号位。不允许屏蔽全部三个位置，将被忽略"

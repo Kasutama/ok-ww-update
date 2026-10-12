@@ -258,6 +258,7 @@ class Labels(str, Enum):
     red_dot = 'red_dot'
     remove_custom = 'remove_custom'
     revive_confirm_hcenter_vcenter = 'revive_confirm_hcenter_vcenter'
+    revive_confirm_use_hcenter_vcenter = 'revive_confirm_use_hcenter_vcenter'
     set_name_10 = 'set_name_10'
     set_name_11 = 'set_name_11'
     set_name_12 = 'set_name_12'

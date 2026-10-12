@@ -961,11 +961,20 @@ class BaseChar:
         return False
 
     def switch_other_char(self, allow_auto_combat=False):
-        target_index = (self.index + 1) % len(self.task.chars)
-        for char in self.task.chars:
-            if char and char.is_healer and char.index != self.index:
+        chars = self.task.chars
+        # 优先切治疗位, 且目标必须未被屏蔽/未死亡 (can_switch_to)
+        target_index = None
+        for char in chars:
+            if char and char.is_healer and char.index != self.index and self.task.can_switch_to(char):
                 target_index = char.index
                 break
+        if target_index is None:
+            fallback = (self.index + 1) % len(chars)
+            if self.task.can_switch_to_index(fallback):
+                target_index = fallback
+        if target_index is None:
+            self.logger.debug(f'{self.char_name} switch_other_char: no allowed target, skip')
+            return
         next_char = str(target_index + 1)
 
         from src.task.AutoCombatTask import AutoCombatTask

@@ -1268,6 +1268,15 @@
             "license": 0,
             "date_captured": null,
             "url": null
+        },
+        {
+            "license": 0,
+            "url": null,
+            "file_name": "images/50.png",
+            "height": 1047,
+            "width": 1918,
+            "date_captured": null,
+            "id": 296
         }
     ],
     "annotations": [
@@ -5357,6 +5366,21 @@
             ],
             "area": 3224,
             "iscrowd": 0
+        },
+        {
+            "id": 441,
+            "image_id": 296,
+            "category_id": 288,
+            "bbox": [
+                1158,
+                757,
+                347,
+                52
+            ],
+            "area": 18044,
+            "iscrowd": 0,
+            "ignore": 0,
+            "segmentation": []
         }
     ],
     "categories": [
@@ -6793,6 +6817,11 @@
         {
             "id": 287,
             "name": "char_lingyang",
+            "supercategory": ""
+        },
+        {
+            "id": 288,
+            "name": "revive_confirm_use_hcenter_vcenter",
             "supercategory": ""
         }
     ]

@@ -6,7 +6,8 @@ from ok import TriggerTask, Logger
 from pynput import keyboard
 from src.char.CharFactory import char_names
 from src.scene.WWScene import WWScene
-from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException, CharDeadException
+from src.task.BaseCombatTask import (BaseCombatTask, NotInCombatException, CharDeadException,
+                                     CharRevivedException)
 
 logger = Logger.get_logger(__name__)
 
@@ -105,12 +106,25 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             'Use Liberation': True,
             'Check Levitator': True,
             'Switch to Healer before and after Combat': True,
+            'Revive Teammate with Medicine': False,
+            'Block Switch Slot 1': False,
+            'Block Switch Slot 2': False,
+            'Block Switch Slot 3': False,
         })
         self.config_description = {
             'Auto Target': 'Turn off to enable auto combat only when manually target enemy using middle click',
             'Use Liberation': 'Do not use Liberation in Open World to Save Time',
             'Check Levitator': 'Toggle the levitator and verify if the character is floating',
             'Switch to Healer before and after Combat': 'Better Chance to Keep Character Alive',
+            'Revive Teammate with Medicine': 'Switch to a dead teammate and use a revival item to bring them back '
+                                             'during combat, also revive the current character with medicine instead '
+                                             'of ending combat',
+            'Block Switch Slot 1': 'Never switch to slot 1 during combat. Blocking all three slots is not allowed, '
+                                   'it will be ignored',
+            'Block Switch Slot 2': 'Never switch to slot 2 during combat. Blocking all three slots is not allowed, '
+                                   'it will be ignored',
+            'Block Switch Slot 3': 'Never switch to slot 3 during combat. Blocking all three slots is not allowed, '
+                                   'it will be ignored',
         }
         self.op_index = 0
         self.char_features_warmed_up = False
@@ -136,6 +150,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         ret = False
         if not self.scene.in_team(self.in_team_and_world):
             return ret
+        self.reset_combat_exclusions()
         self.use_liberation = self.config.get('Use Liberation')
         if not self.use_liberation and not self.in_world():  # 仅大世界生效
             self.use_liberation = True
@@ -148,6 +163,9 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                     self.switch_healer()
                     switched_to_healer = True
                 self.get_current_char().perform()
+            except CharRevivedException:
+                # 复苏道具复活成功, 原地继续战斗
+                continue
             except CharDeadException:
                 self.log_error(f'Characters dead', notify=True)
                 break
@@ -172,7 +190,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 self.send_key(self.get_echo_key())
             elif self.available('resonance'):
                 self.send_key(self.get_resonance_key())
-            elif self.is_con_full() and self.in_team()[0]:
+            elif self.is_con_full() and self.in_team()[0] and self.can_switch_to_index(1):
                 self.send_key_and_wait_animation('2', self.in_illusive_realm)
         self.last_is_click = not self.last_is_click
         self.op_index += 1

@@ -1116,8 +1116,8 @@ msgid "Merge Discarded Echoes"
 msgstr "破棄済み音骸を融合"
 
 msgid ""
-"Must have 1000 discarded Echo to Run, Merge discarded Echoes in full "
-"batches of 100."
+"Must have 1000 discarded Echo to Run, Merge discarded Echoes in full batches"
+" of 100."
 msgstr "実行には破棄済み音骸が1000個必要です。破棄済み音骸を100個単位で融合します。"
 
 msgid "Bag Key"
@@ -1144,13 +1144,18 @@ msgstr "破棄済み音骸が1000個超なら融合"
 msgid "Additional Tasks to Run After Daily Task"
 msgstr "デイリータスク後に実行する追加タスク"
 
-msgid "Select optional tasks. Nightmare Nest runs before stamina farming to help complete the daily task; the other tasks run afterward."
+msgid ""
+"Select optional tasks. Nightmare Nest runs before stamina farming to help "
+"complete the daily task; the other tasks run afterward."
 msgstr "任意のタスクを選択します。悪夢の巣はデイリー達成を補助するためスタミナ消費前に実行し、その他のタスクはその後に実行します。"
 
-msgid "Teleport and Farm 4C Echo requires \"Teleport to Boss\" to be enabled in Farm Echo Task."
+msgid ""
+"Teleport and Farm 4C Echo requires \"Teleport to Boss\" to be enabled in "
+"Farm Echo Task."
 msgstr "「テレポートしてコスト4音骸を収集」を実行するには、音骸収集タスクの「ボスへテレポート」を有効にしてください。"
 
-msgid "Auto Farm all Nightmare Nest requires at least one \"Which to Farm\" option."
+msgid ""
+"Auto Farm all Nightmare Nest requires at least one \"Which to Farm\" option."
 msgstr "「すべての悪夢の巣を自動周回」を実行するには、「周回対象」を1つ以上選択してください。"
 
 msgid "Daily Task Completed"
@@ -1232,7 +1237,8 @@ msgid "点击B进入背包, 在过滤器中选择需要强化的声骸, 并按�
 msgstr "Bキーでバッグを開き、フィルターで強化する音骸を選択し、レベル0から昇順に並べて開始してください。"
 
 msgid "游戏与okww语言必须为简体/繁体中文,必须16:9分辨率,使用1600x900以上分辨率, 勾选需要的, 没勾的都会自动合成"
-msgstr "ゲームとokwwの言語は簡体字/繁体字中国語、解像度は16:9かつ1600x900以上が必要です。必要なものにチェックを入れると、未チェックのものは自動合成されます。"
+msgstr ""
+"ゲームとokwwの言語は簡体字/繁体字中国語、解像度は16:9かつ1600x900以上が必要です。必要なものにチェックを入れると、未チェックのものは自動合成されます。"
 
 msgid "Switch to Healer before and after Combat"
 msgstr "戦闘前後にヒーラーへ切り替える"
@@ -1395,8 +1401,44 @@ msgstr "特異悪夢"
 
 msgid "Which Special Nightmare to Teleport"
 msgstr "テレポートする特異悪夢"
+
 msgid "Multi Account Config Task"
 msgstr "複数アカウント設定タスク"
 
-msgid "Log in to accounts in card order and run tasks with independent configurations"
+msgid ""
+"Log in to accounts in card order and run tasks with independent "
+"configurations"
 msgstr "カードの順番でアカウントにログインし、個別の設定でタスクを実行します"
+
+msgid "Revive Teammate with Medicine"
+msgstr "倒れた味方を薬で自動復活"
+
+msgid ""
+"Switch to a dead teammate and use a revival item to bring them back during "
+"combat, also revive the current character with medicine instead of ending "
+"combat"
+msgstr "戦闘中に倒れた味方へ切り替えて蘇生アイテムで復活させます。現在のキャラクターが倒れた場合も、戦闘を終了する代わりにアイテムで復活します"
+
+msgid "Block Switch Slot 1"
+msgstr "1番スロットへの切り替えを禁止"
+
+msgid ""
+"Never switch to slot 1 during combat. Blocking all three slots is not "
+"allowed, it will be ignored"
+msgstr "戦闘中は1番スロットへ切り替えません。3つすべてを禁止することはできず、設定しても無視されます"
+
+msgid "Block Switch Slot 2"
+msgstr "2番スロットへの切り替えを禁止"
+
+msgid ""
+"Never switch to slot 2 during combat. Blocking all three slots is not "
+"allowed, it will be ignored"
+msgstr "戦闘中は2番スロットへ切り替えません。3つすべてを禁止することはできず、設定しても無視されます"
+
+msgid "Block Switch Slot 3"
+msgstr "3番スロットへの切り替えを禁止"
+
+msgid ""
+"Never switch to slot 3 during combat. Blocking all three slots is not "
+"allowed, it will be ignored"
+msgstr "戦闘中は3番スロットへ切り替えません。3つすべてを禁止することはできず、設定しても無視されます"

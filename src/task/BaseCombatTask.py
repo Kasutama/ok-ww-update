@@ -81,6 +81,9 @@ class BaseCombatTask(CombatCheck):
         self.use_liberation = True
         # 由副本恢复循环维护: 本轮从信标直接进本时, 退本即回到信标并自动回血
         self.realm_entry_at_heal_point = False
+        # 本次战斗内禁止切入的站位: 屏蔽站位 + 已确认死亡未复活的角色 (index 0/1/2 = 一/二/三号位)
+        self.combat_dead_indices = set()
+        self._blocked_slots_warned = False
 
     def add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1):
         """添加冻结持续时间。用于精确计算技能冷却等。
@@ -324,6 +327,10 @@ class BaseCombatTask(CombatCheck):
             if not isinstance(self, AutoCombatTask) and self.revive_action():
                 exception_type = CharRevivedException
                 self.info_set('Revive', 'Success')
+            elif isinstance(self, AutoCombatTask) and self.handle_revive_dialog() == 'revived':
+                # 自动战斗: 确认使用复苏道具复活, 让任务循环重入战斗而非直接结束
+                exception_type = CharRevivedException
+                self.info_set('Revive', 'Success')
             else:
                 exception_type = CharDeadException
                 self.info_set('Revive', 'Failed')
@@ -379,6 +386,7 @@ class BaseCombatTask(CombatCheck):
             wait_combat_time (int, optional): 等待进入战斗状态的超时时间 (秒)。默认为 200。
             raise_if_not_found (bool, optional): 如果未找到战斗状态是否抛出异常。默认为 True。
         """
+        self.reset_combat_exclusions()
         if wait_combat_time > 0:
             result = self.wait_combat(target=target, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found)
         if self.switch_healer_enabled():
@@ -528,7 +536,7 @@ class BaseCombatTask(CombatCheck):
     def _choose_switch_target(self, current_char, has_intro, target_low_con=False):
         candidates = [
             char for char in self.chars
-            if char is not None and char != current_char
+            if char is not None and char != current_char and self.can_switch_to(char)
         ]
         if not candidates:
             return current_char
@@ -620,6 +628,19 @@ class BaseCombatTask(CombatCheck):
         last_click = 0
         start = time.time()
         while True:
+            # 切人过程中检测复活确认弹窗 (切向已死亡队友时游戏会弹出)
+            if self.find_feature('revive_confirm_hcenter_vcenter', threshold=0.8) is not None:
+                if self.handle_revive_dialog() == 'closed':
+                    self.combat_dead_indices.add(switch_to.index)
+                    logger.info(f'switch_next_char: {switch_to} dead without medicine, exclude and re-pick')
+                    switch_to = self._choose_switch_target(current_char, has_intro, target_low_con=target_low_con)
+                    if not switch_to or switch_to == current_char:
+                        logger.warning(f'{current_char} no alive switch target left, performing normal attack')
+                        current_char.continues_normal_attack(0.2)
+                        return
+                    self._apply_intro_flags(current_char, switch_to, has_intro)
+                    logger.info(f'switch_next_char re-picked target after death: {switch_to}')
+                    continue
             if not (isinstance(switch_to, ShoreKeeper) and has_intro):
                 self.check_combat()
             now = time.time()
@@ -777,6 +798,97 @@ class BaseCombatTask(CombatCheck):
             from src.task.AutoCombatTask import AutoCombatTask
             config_task = self.get_task_by_class(AutoCombatTask)
         return bool(config_task and config_task.config.get('Switch to Healer before and after Combat'))
+
+    def _get_switch_config(self):
+        """返回承载屏蔽/用药开关的配置对象 (AutoCombatTask 的 config)。
+
+        自动战斗专属配置由 AutoCombatTask 持有 (owns_switch_healer_config=True),
+        其他战斗任务通过 get_task_by_class 跨任务读取; 无配置对象时返回 None
+        (此时屏蔽与用药功能全部视为关闭, 保持默认行为)。
+        """
+        config = getattr(self, 'config', None)
+        if config is None:
+            return None
+        if self.owns_switch_healer_config:
+            return config
+        from src.task.AutoCombatTask import AutoCombatTask
+        config_task = self.get_task_by_class(AutoCombatTask)
+        if not config_task:
+            return None
+        return getattr(config_task, 'config', None)
+
+    def reset_combat_exclusions(self):
+        """每场战斗开始时重置屏蔽告警标记与死亡角色集合。"""
+        self.combat_dead_indices = set()
+        self._blocked_slots_warned = False
+
+    def blocked_switch_indices(self):
+        """读取屏蔽站位配置, 返回被屏蔽的 char.index 集合。
+
+        Block Switch Slot 1/2/3 分别对应 index 0/1/2 (一/二/三号位)。
+        三个位置全部屏蔽属于非法配置 (至少要保留一个站位), 降级为不屏蔽
+        并只告警一次; 全不选返回空集 (不屏蔽)。
+        """
+        config = self._get_switch_config()
+        if not config:
+            return set()
+        blocked = {slot - 1 for slot in (1, 2, 3) if config.get(f'Block Switch Slot {slot}')}
+        if len(blocked) >= 3:
+            if not getattr(self, '_blocked_slots_warned', False):
+                self._blocked_slots_warned = True
+                logger.warning('Block Switch Slot 1/2/3 all enabled, '
+                               'at least one slot must remain switchable, ignore blocking')
+            return set()
+        return blocked
+
+    def can_switch_to_index(self, index):
+        """判断本次战斗是否允许切入该站位。
+
+        排除两类目标: 屏蔽站位 (Block Switch Slot N) 与本次战斗中已确认
+        死亡且未用药复活的角色 (combat_dead_indices)。
+        """
+        if index is None:
+            return False
+        if index in getattr(self, 'combat_dead_indices', set()):
+            return False
+        return index not in self.blocked_switch_indices()
+
+    def can_switch_to(self, char):
+        """判断本次战斗是否允许切入该角色, 见 can_switch_to_index。"""
+        if char is None:
+            return False
+        return self.can_switch_to_index(char.index)
+
+    def handle_revive_dialog(self):
+        """检测并处理复活确认弹窗。
+
+        用药开关 ('Revive Teammate with Medicine') 开启且确认按钮模板可用时,
+        点击确认使用复苏道具复活; 否则关闭弹窗 (维持原有行为)。
+
+        Returns:
+            str: 'none' 无弹窗; 'revived' 确认用药且复活成功; 'closed' 弹窗已关闭。
+        """
+        if not self.wait_feature('revive_confirm_hcenter_vcenter', threshold=0.8, time_out=1):
+            return 'none'
+        config = self._get_switch_config()
+        if config is not None and config.get('Revive Teammate with Medicine'):
+            try:
+                confirm = self.find_one('revive_confirm_use_hcenter_vcenter', threshold=0.7)
+            except ValueError:
+                # 确认按钮模板尚未标注 (assets/coco_annotations.json 缺该 feature)
+                confirm = None
+            if confirm:
+                self.click(confirm, after_sleep=0.5)
+                if self.wait_until(lambda: self.find_feature('revive_confirm_hcenter_vcenter', threshold=0.8) is None,
+                                   time_out=5, raise_if_not_found=False):
+                    self.info_set('Revive', 'Success')
+                    logger.info('handle_revive_dialog: revived with medicine')
+                    return 'revived'
+                logger.warning('handle_revive_dialog: confirm clicked but revive dialog still visible')
+            else:
+                logger.warning('handle_revive_dialog: revive confirm button template missing, closing popup instead')
+        self.close_revive_popup()
+        return 'closed'
 
     def sleep_check(self):
         """休眠指定时间, 并在休眠前后检查战斗状态。
