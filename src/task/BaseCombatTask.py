@@ -84,6 +84,9 @@ class BaseCombatTask(CombatCheck):
         # 本次战斗内禁止切入的站位: 屏蔽站位 + 已确认死亡未复活的角色 (index 0/1/2 = 一/二/三号位)
         self.combat_dead_indices = set()
         self._blocked_slots_warned = False
+        # 切人后弹窗检测的宽限期: 正常切人 <0.5s 完成, 超过此时间仍未完成
+        # 才开始逐帧检测复活确认弹窗 (检测有整帧缩放开销, 避免拖慢正常切人)
+        self.revive_check_grace = 0.7
 
     def add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1):
         """添加冻结持续时间。用于精确计算技能冷却等。
@@ -627,9 +630,18 @@ class BaseCombatTask(CombatCheck):
         from src.char.ShoreKeeper import ShoreKeeper
         last_click = 0
         start = time.time()
+        # 复活弹窗检测开销较大 (整帧缩放 ~100ms/次)，懒检测:
+        # 仅当切人明显卡住 (超过宽限期仍未完成) 时才逐帧检测，
+        # 正常切人路径零额外开销。已确认死亡的站位会被加入
+        # combat_dead_indices 黑名单，_choose_switch_target 不会再选中，
+        # 因此正常路径跳过检测不会漏掉弹窗。
+        grace = getattr(self, 'revive_check_grace', 0.7)
+        revive_check_start = start + grace
         while True:
             # 切人过程中检测复活确认弹窗 (切向已死亡队友时游戏会弹出)
-            if self.find_feature('revive_confirm_hcenter_vcenter', threshold=0.8) is not None:
+            now = time.time()
+            if now >= revive_check_start and \
+                    self.find_feature('revive_confirm_hcenter_vcenter', threshold=0.8) is not None:
                 if self.handle_revive_dialog() == 'closed':
                     self.combat_dead_indices.add(switch_to.index)
                     logger.info(f'switch_next_char: {switch_to} dead without medicine, exclude and re-pick')
@@ -643,7 +655,6 @@ class BaseCombatTask(CombatCheck):
                     continue
             if not (isinstance(switch_to, ShoreKeeper) and has_intro):
                 self.check_combat()
-            now = time.time()
             _, current_index, _ = self.in_team()
             if current_index == current_char.index:
                 self.update_lib_portrait_icon()
@@ -677,7 +688,21 @@ class BaseCombatTask(CombatCheck):
             if not in_team:
                 logger.info(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
                 # if self.debug:
-                #     self.screenshot(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
+                #     self.screenshot(f'not in_team while switching chars_{current_char}_to_{switch_to} {now - start}')
+                # 弹窗可能遮挡队伍识别，raise 前兜底检测一次复活确认弹窗
+                if self.find_feature('revive_confirm_hcenter_vcenter', threshold=0.8) is not None:
+                    if self.handle_revive_dialog() == 'closed':
+                        self.combat_dead_indices.add(switch_to.index)
+                        logger.info(f'switch_next_char: {switch_to} dead without medicine, exclude and re-pick')
+                        switch_to = self._choose_switch_target(current_char, has_intro, target_low_con=target_low_con)
+                        if not switch_to or switch_to == current_char:
+                            logger.warning(f'{current_char} no alive switch target left, performing normal attack')
+                            current_char.continues_normal_attack(0.2)
+                            return
+                        self._apply_intro_flags(current_char, switch_to, has_intro)
+                        logger.info(f'switch_next_char re-picked target after death: {switch_to}')
+                    self.next_frame()
+                    continue
                 self.raise_not_in_combat(f'not in_team while switching')
                 if now - start > self.switch_char_time_out:
                     self.raise_not_in_combat(
