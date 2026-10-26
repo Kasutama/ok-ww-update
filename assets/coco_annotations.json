@@ -1263,8 +1263,8 @@
         {
             "id": 41,
             "file_name": "images/49.png",
-            "width": 2560,
-            "height": 1440,
+            "width": 3840,
+            "height": 2160,
             "license": 0,
             "date_captured": null,
             "url": null
@@ -1277,6 +1277,18 @@
             "width": 1918,
             "date_captured": null,
             "id": 296
+        },
+        {
+            "id": 297,
+            "file_name": "images/51.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 298,
+            "file_name": "images/0.png",
+            "width": 3840,
+            "height": 2160
         }
     ],
     "annotations": [
@@ -5356,7 +5368,7 @@
         },
         {
             "id": 440,
-            "image_id": 41,
+            "image_id": 297,
             "category_id": 287,
             "bbox": [
                 2355,
@@ -5381,6 +5393,58 @@
             "iscrowd": 0,
             "ignore": 0,
             "segmentation": []
+        },
+        {
+            "id": 191,
+            "image_id": 41,
+            "category_id": 291,
+            "bbox": [
+                3534,
+                450,
+                107,
+                69
+            ],
+            "area": 7383,
+            "iscrowd": 0
+        },
+        {
+            "id": 192,
+            "image_id": 41,
+            "category_id": 292,
+            "bbox": [
+                3209,
+                1893,
+                78,
+                74
+            ],
+            "area": 5772,
+            "iscrowd": 0
+        },
+        {
+            "id": 442,
+            "image_id": 298,
+            "category_id": 289,
+            "bbox": [
+                1934,
+                1788,
+                62,
+                68
+            ],
+            "area": 4216,
+            "iscrowd": 0
+        },
+        {
+            "id": 443,
+            "image_id": 298,
+            "category_id": 290,
+            "bbox": [
+                1805,
+                1788,
+                62,
+                68
+            ],
+            "area": 4216,
+            "iscrowd": 0
         }
     ],
     "categories": [
@@ -6822,6 +6886,26 @@
         {
             "id": 288,
             "name": "revive_confirm_use_hcenter_vcenter",
+            "supercategory": ""
+        },
+        {
+            "id": 289,
+            "name": "douling_gen",
+            "supercategory": ""
+        },
+        {
+            "id": 290,
+            "name": "douling_zhen",
+            "supercategory": ""
+        },
+        {
+            "id": 291,
+            "name": "char_suoming",
+            "supercategory": ""
+        },
+        {
+            "id": 292,
+            "name": "suoming_forte_e",
             "supercategory": ""
         }
     ]

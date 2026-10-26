@@ -2,7 +2,7 @@ import threading
 import time
 import weakref
 
-from ok import TriggerTask, Logger
+from ok import TriggerTask, Logger, TaskDisabledException
 from pynput import keyboard
 from src.char.CharFactory import char_names
 from src.scene.WWScene import WWScene
@@ -93,6 +93,7 @@ combat_toggle_hotkey = CombatToggleHotkey()
 
 class AutoCombatTask(BaseCombatTask, TriggerTask):
     owns_switch_healer_config = True
+    _reset_combat_on_run = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -129,6 +130,17 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.op_index = 0
         self.char_features_warmed_up = False
 
+    def disable(self):
+        # The UI thread only invalidates state; the executor performs the reset.
+        self._reset_combat_on_run = True
+        super().disable()
+
+    def reset_auto_combat(self, reason):
+        self._reset_combat_on_run = False
+        self.reset_to_false(reason)
+        self.chars = [None, None, None]
+        self.freeze_durations = []
+
     def on_create(self):
         super().on_create()
         combat_toggle_hotkey.register(self)
@@ -146,9 +158,19 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         logger.info(f'warm_up_char_features loaded {len(char_names)} character templates')
 
     def run(self):
+        if self._reset_combat_on_run:
+            self.reset_auto_combat('auto combat restarted')
+        try:
+            return self.run_auto_combat()
+        except TaskDisabledException:
+            self.reset_auto_combat('auto combat disabled')
+            raise
+
+    def run_auto_combat(self):
         self.warm_up_char_features()
         ret = False
         if not self.scene.in_team(self.in_team_and_world):
+            self.reset_auto_combat('not in team and world')
             return ret
         self.reset_combat_exclusions()
         self.use_liberation = self.config.get('Use Liberation')
