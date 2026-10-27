@@ -22,12 +22,14 @@ class SkipBaseTask(BaseWWTask):
         if self.click_skip_dialog_confirm():
             self.confirm_dialog_checked = True
             return True
-        if skip_button := self.find_one('skip_quest_confirm', threshold=0.8):
+        # threshold 0.85: skip_quest_confirm_new can score up to ~0.80 on the
+        # stamina claim dialog, which must never be clicked by AutoDialogTask.
+        if skip_button := self.find_one('skip_quest_confirm', threshold=0.85):
             # sleep 0.2 to stable click skip button
             self.sleep(0.2)
             self.click(skip_button)
             return True
-        if skip_button := self.find_one('skip_quest_confirm_new', threshold=0.8):
+        if skip_button := self.find_one('skip_quest_confirm_new', threshold=0.85):
             self.sleep(0.2)
             self.click(skip_button)
             return True

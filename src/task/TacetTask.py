@@ -45,7 +45,8 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         self.wait_in_team_and_world(esc=True)
         self.farm_tacet()
 
-    def farm_tacet(self, daily=False, used_stamina=0, config=None, max_recovery_retries=3):
+    def farm_tacet(self, daily=False, used_stamina=0, config=None, max_recovery_retries=3,
+                   max_walk_retries=2):
         if config is None:
             config = self.config
         if daily:
@@ -54,6 +55,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             must_use = 0
         self.info_incr('used stamina', 0)
         recovery_retries = 0
+        walk_retries = 0
         self.realm_entry_at_heal_point = False
         while True:
             self.sleep(1)
@@ -82,7 +84,18 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                     self.log_info('farm_tacet: death recovered, re-enter from F2 book')
                     self.realm_entry_at_heal_point = True  # 恢复后站在信标上, 从 F2 直接进本
                     break
-                self.walk_to_treasure()
+                try:
+                    self.walk_to_treasure()
+                except Exception as e:
+                    walk_retries += 1
+                    if walk_retries >= max_walk_retries:
+                        self.log_info(f'farm_tacet: exceeded walk_to_treasure retries ({max_walk_retries}), stop farming',
+                                      notify=True)
+                        return None
+                    self.log_info(f'farm_tacet: walk_to_treasure failed ({e}), re-enter from F2 book')
+                    self.realm_entry_at_heal_point = False  # 走到宝箱失败时不在信标上, 恢复信标语义
+                    self.esc_cancel()
+                    break
                 self.pick_f(handle_claim=False)
                 self.sleep(2)
                 if not self.has_claim_stamina():
